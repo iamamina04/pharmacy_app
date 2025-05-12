@@ -11,8 +11,14 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import os
 st.set_page_config(layout="wide")
-nltk.download("punkt")
-nltk.download("stopwords")
+try:
+    nltk.data.find("tokenizers/punkt")
+except LookupError:
+    nltk.download("punkt")
+try:
+    nltk.data.find("corpora/stopwords")
+except LookupError:
+    nltk.download("stopwords")
 
 # --- Словарь: номер аптеки → район ---
 pharmacy_districts = {
