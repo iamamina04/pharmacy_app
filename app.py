@@ -11,14 +11,8 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import os
 st.set_page_config(layout="wide")
-try:
-    nltk.data.find("tokenizers/punkt")
-except LookupError:
-    nltk.download("punkt")
-try:
-    nltk.data.find("corpora/stopwords")
-except LookupError:
-    nltk.download("stopwords")
+nltk.download("punkt")
+nltk.download("stopwords")
 
 # --- Словарь: номер аптеки → район ---
 pharmacy_districts = {
@@ -32,7 +26,6 @@ pharmacy_districts = {
 
 # --- Обработка аптек → районов ---
 def get_districts(pharmacies_str):
-    try:
         pharmacies = ast.literal_eval(pharmacies_str)
         districts = set()
         for p in pharmacies:
@@ -41,7 +34,6 @@ def get_districts(pharmacies_str):
                 if number in pharmacy_districts:
                     districts.add(pharmacy_districts[number])
         return list(districts)
-    except:
         return []
 
 # --- Стемминг ---
@@ -103,7 +95,6 @@ API_KEY = os.getenv('TOKEN')
 client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=API_KEY)
 
 def get_product_recommendations(product_name):
-    try:
         completion = client.chat.completions.create(
             model="deepseek/deepseek-chat-v3-0324:free",
             messages=[{"role": "user",
