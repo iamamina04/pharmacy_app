@@ -8,9 +8,11 @@ from nltk.corpus import stopwords
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from openai import OpenAI
-from dotenv import load_dotenv
 import os
+
 st.set_page_config(layout="wide")
+
+# Загрузка необходимых ресурсов
 nltk.download("punkt")
 nltk.download("stopwords")
 
@@ -24,8 +26,8 @@ pharmacy_districts = {
     '320': 'Турксибский', '323': 'Ауэзовский'
 }
 
-# --- Обработка аптек → районов ---
 def get_districts(pharmacies_str):
+    try:
         pharmacies = ast.literal_eval(pharmacies_str)
         districts = set()
         for p in pharmacies:
@@ -34,6 +36,7 @@ def get_districts(pharmacies_str):
                 if number in pharmacy_districts:
                     districts.add(pharmacy_districts[number])
         return list(districts)
+    except:
         return []
 
 # --- Стемминг ---
@@ -47,7 +50,6 @@ def stem_text(text):
     stemmed_words = [stemmer.stem(word) for word in words if word.isalpha()]
     return " ".join(stemmed_words)
 
-# --- Загрузка и подготовка данных ---
 @st.cache_data
 def load_data():
     df = pd.read_csv("processed_products_data.csv")
@@ -65,7 +67,6 @@ def load_data():
 
 data = load_data()
 
-# --- TF-IDF подготовка ---
 @st.cache_resource
 def fit_tfidf(texts):
     tfidf = TfidfVectorizer(stop_words=russian_stopwords, max_features=5000)
@@ -74,7 +75,6 @@ def fit_tfidf(texts):
 
 tfidf_stemmed, tfidf_matrix_stemmed = fit_tfidf(data["text_stemmed"])
 
-# --- Поиск ---
 def search_products(query, top_n=5, selected_district=None):
     query_stemmed = stem_text(query)
     query_vec = tfidf_stemmed.transform([query_stemmed])
@@ -88,70 +88,64 @@ def search_products(query, top_n=5, selected_district=None):
 
     return results[["Название", "Описание", "Цена", "Аптеки", "Районы", "Изображение"]]
 
-# --- OpenRouter API ---
-load_dotenv()
-
-API_KEY = os.getenv('TOKEN')
-client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=API_KEY)
+# --- AI рекомендация ---
+API_KEY = os.getenv("TOKEN")
+client = OpenAI(api_key=API_KEY, base_url="https://openrouter.ai/api/v1")
 
 def get_product_recommendations(product_name):
+    try:
         completion = client.chat.completions.create(
-        model="deepseek/deepseek-chat-v3-0324:free",
-        messages=[{"role": "user",
-        "content": f"Опиши кратко товар {product_name} и дай основную рекомендацию в одном предложении на русском."}]
+            model="deepseek/deepseek-chat-v3-0324:free",
+            messages=[{
+                "role": "user",
+                "content": f"Опиши кратко товар {product_name} и дай основную рекомендацию в одном предложении на русском."
+            }]
         )
-
         if completion.choices:
             return {"description": completion.choices[0].message.content.strip()}
         else:
             return {"error": "Информация не найдена для этого товара"}
-
     except Exception as e:
-            return {"error": f"Ошибка при запросе к API: {str(e)}"}
+        return {"error": f"Ошибка при запросе к API: {str(e)}"}
 
-        # --- Интерфейс ---
+# --- Интерфейс ---
+st.title("💊 Поиск лекарств в аптеках Алматы")
 
-        st.title("\U0001F489 Поиск лекарств в аптеках Алматы")
-        query = st.text_input("Введите название лекарства или симптомы:")
+query = st.text_input("Введите название лекарства или симптомы:")
+districts = sorted(set(sum(data["Районы"], [])))
+selected_district = st.selectbox("Выберите район:", [""] + districts)
 
-        districts = sorted(set(sum(data["Районы"], [])))
-        selected_district = st.selectbox("Выберите район:", [""] + districts)
+if query:
+    results = search_products(query, top_n=10, selected_district=selected_district)
 
-
-        if query:
-        results = search_products(query, top_n=10, selected_district=selected_district)
-
-        if results.empty:
+    if results.empty:
         st.warning("Ничего не найдено для выбранного района.")
-        else:
+    else:
         for _, row in results.iterrows():
-        with st.container():
-        col1, col2 = st.columns([1, 6])
-        with col1:
-        if "Изображение" in row and isinstance(row["Изображение"], str):
-        st.image(row["Изображение"], width=200)
-        with col2:
-        st.subheader(row["Название"])
-        st.write(f"Цена: {row['Цена']} тг")
+            with st.container():
+                col1, col2 = st.columns([1, 6])
+                with col1:
+                    if "Изображение" in row and isinstance(row["Изображение"], str):
+                        st.image(row["Изображение"], width=200)
+                with col2:
+                    st.subheader(row["Название"])
+                    st.write(f"Цена: {row['Цена']} тг")
 
-        # Краткое описание с возможностью развернуть
-        with st.expander("Описание"):
-        st.write(row["Описание"])
+                    with st.expander("Описание"):
+                        st.write(row["Описание"])
 
-        # Аптеки в выбранном районе
-        if selected_district:
-        pharmacies = ast.literal_eval(row["Аптеки"])
-        filtered = []
-        for ph in pharmacies:
-        nums = re.findall(r"\u2116\s*(\d+)", ph)
-        for n in nums:
-        if pharmacy_districts.get(n) == selected_district:
-        url = f"https://europharma.kz/map#{n}"
-        filtered.append(f"[Аптека №{n}]({url})")
-        if filtered:
-        st.markdown(f"Аптеки с наличием товара в {selected_district} район: " + ", ".join(filtered))
+                    if selected_district:
+                        pharmacies = ast.literal_eval(row["Аптеки"])
+                        filtered = []
+                        for ph in pharmacies:
+                            nums = re.findall(r"\u2116\s*(\d+)", ph)
+                            for n in nums:
+                                if pharmacy_districts.get(n) == selected_district:
+                                    url = f"https://europharma.kz/map#{n}"
+                                    filtered.append(f"[Аптека №{n}]({url})")
+                        if filtered:
+                            st.markdown(f"Аптеки в {selected_district}: " + ", ".join(filtered))
 
-        # Кнопка для вызова AI-рекомендации
-        if st.button(f"Рекомендация от ИИ: {row['Название']}", key=row['Название']):
-        recommendation = get_product_recommendations(row['Название'])
-        st.info(recommendation.get("description", "Информация не доступна"))
+                    if st.button(f"Рекомендация от ИИ: {row['Название']}", key=row['Название']):
+                        recommendation = get_product_recommendations(row['Название'])
+                        st.info(recommendation.get("description", "Информация недоступна"))
