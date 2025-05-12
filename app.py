@@ -106,7 +106,7 @@ def get_product_recommendations(product_name):
         else:
             return {"error": "Информация не найдена для этого товара"}
 
-    except Exception as e:
+        except Exception as e:
         return {"error": f"Ошибка при запросе к API: {str(e)}"}
 
 # --- Интерфейс ---
